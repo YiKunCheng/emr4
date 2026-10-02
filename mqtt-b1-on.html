@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#eaf6ff">
+  <title>JJ Lab｜裝置控制</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    :root { color-scheme: light; --ink:#18334b; --muted:#71879b; --blue:#83c8f2; --blue-dark:#328bc5; }
+    * { box-sizing:border-box }
+    body { margin:0; min-height:100vh; display:grid; place-items:center; padding:24px; color:var(--ink); font-family:Inter,"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif; background:radial-gradient(ellipse at 15% 10%,#fff 0,transparent 37%),linear-gradient(145deg,#eef9ff,#e5f1ff 56%,#f7fbff); }
+    .card { width:min(100%,560px); padding:clamp(24px,5vw,42px); border:1px solid rgba(255,255,255,.9); border-radius:30px; background:rgba(255,255,255,.78); box-shadow:0 24px 70px rgba(61,119,160,.14), inset 0 1px 0 #fff; backdrop-filter:blur(18px); }
+    .eyebrow { color:#5798c3; font-size:12px; font-weight:800; letter-spacing:.2em; text-transform:uppercase }
+    h1 { margin:9px 0 8px; font-size:clamp(26px,6vw,34px); letter-spacing:-.04em }
+    .intro { margin:0; color:var(--muted); line-height:1.7 }
+    .status { display:flex; align-items:center; gap:12px; margin:27px 0 30px; padding:15px 17px; border:1px solid #e6eef4; border-radius:17px; background:#f9fcff }
+    .dot { width:11px; height:11px; border-radius:50%; background:#f3bd61; box-shadow:0 0 0 5px #fff3df; flex:none }
+    .dot.online { background:#49bd89; box-shadow:0 0 0 5px #e3f8ee }
+    .dot.error { background:#e47c7c; box-shadow:0 0 0 5px #fff0f0 }
+    .status strong { display:block; font-size:14px }
+    .status small { display:block; margin-top:3px; color:var(--muted); font-size:12px }
+    .control { text-align:center; padding:6px 0 3px }
+    .send-row { display:flex; align-items:center; justify-content:center; gap:15px }
+    .message-field { flex:1; min-width:0; text-align:left }
+    .message-field label { display:block; margin:0 0 8px 3px; color:#5e7d95; font-size:12px; font-weight:700 }
+    .message-field input { width:100%; padding:14px 15px; border:1px solid #d5e7f3; border-radius:14px; outline:none; color:#244c69; background:rgba(255,255,255,.88); font:600 15px system-ui,"Microsoft JhengHei",sans-serif; box-shadow:0 4px 14px rgba(66,130,170,.06); transition:border-color .18s,box-shadow .18s }
+    .message-field input:focus { border-color:#83c8f2; box-shadow:0 0 0 4px rgba(131,200,242,.2) }
+    .message-field input:disabled { opacity:.65 }
+    .transcript-row { display:flex; align-items:stretch; gap:12px; margin-top:20px; text-align:left }
+    .transcript-field { flex:1; min-width:0 }
+    .transcript-field label { display:block; margin:0 0 8px 3px; color:#5e7d95; font-size:12px; font-weight:700 }
+    .transcript-field textarea { display:block; width:100%; min-height:98px; resize:vertical; padding:13px 15px; border:1px solid #d5e7f3; border-radius:14px; outline:none; color:#244c69; background:rgba(255,255,255,.9); font:500 15px/1.6 system-ui,"Microsoft JhengHei",sans-serif; box-shadow:0 4px 14px rgba(66,130,170,.06); transition:border-color .18s,box-shadow .18s }
+    .transcript-field textarea:focus { border-color:#83c8f2; box-shadow:0 0 0 4px rgba(131,200,242,.2) }
+    .send-button { align-self:flex-end; min-height:48px; padding:0 19px; border:1px solid #a8d7f2; border-radius:15px; color:#205779; background:linear-gradient(145deg,#e7f7ff,#c4e9fc); box-shadow:0 7px 17px rgba(71,158,211,.14); font:700 14px system-ui,"Microsoft JhengHei",sans-serif; cursor:pointer; transition:transform .18s,box-shadow .18s,opacity .18s }
+    .send-button:hover:not(:disabled) { transform:translateY(-2px); box-shadow:0 10px 20px rgba(71,158,211,.22) }
+    .send-button:disabled { opacity:.48; cursor:not-allowed }
+    .mic-button { display:grid; place-items:center; width:clamp(145px,35vw,190px); aspect-ratio:1; flex:none; border:0; border-radius:50%; color:#16466b; background:linear-gradient(150deg,#d5f0ff,#8ecff5 60%,#78bdea); box-shadow:0 15px 32px rgba(71,158,211,.28),inset 0 5px 13px rgba(255,255,255,.9),inset 0 -7px 14px rgba(54,132,184,.16); cursor:pointer; transition:transform .18s,box-shadow .18s,opacity .18s; }
+    .mic-button:hover:not(:disabled) { transform:translateY(-3px); box-shadow:0 20px 38px rgba(71,158,211,.34),inset 0 5px 13px rgba(255,255,255,.9),inset 0 -7px 14px rgba(54,132,184,.16) }
+    .mic-button:active:not(:disabled) { transform:scale(.97) }
+    .mic-button:disabled { opacity:.55; cursor:not-allowed }
+    .mic-button.listening { background:linear-gradient(150deg,#c6edff,#72bce9 60%,#5ba8dc); box-shadow:0 0 0 8px rgba(131,200,242,.18),0 15px 32px rgba(71,158,211,.28),inset 0 5px 13px rgba(255,255,255,.8) }
+    .mic-icon { width:46px; height:46px; }
+    .wave { display:none; align-items:center; justify-content:center; gap:4px; height:28px; margin:13px auto 0; color:#4b9acb }
+    .wave.active { display:flex }
+    .wave i { width:4px; height:8px; border-radius:9px; background:currentColor; animation:wave .75s ease-in-out infinite alternate }
+    .wave i:nth-child(2),.wave i:nth-child(6) { animation-delay:.12s }
+    .wave i:nth-child(3),.wave i:nth-child(5) { animation-delay:.24s }
+    .wave i:nth-child(4) { animation-delay:.36s }
+    @keyframes wave { to { height:26px; opacity:.55 } }
+    .button { width:clamp(145px,35vw,190px); aspect-ratio:1; flex:none; border:0; border-radius:50%; color:#16466b; background:linear-gradient(150deg,#d5f0ff,#8ecff5 60%,#78bdea); box-shadow:0 15px 32px rgba(71,158,211,.28),inset 0 5px 13px rgba(255,255,255,.9),inset 0 -7px 14px rgba(54,132,184,.16); font:inherit; font-weight:800; cursor:pointer; transition:transform .18s,box-shadow .18s,opacity .18s; }
+    .button:hover:not(:disabled) { transform:translateY(-3px); box-shadow:0 20px 38px rgba(71,158,211,.34),inset 0 5px 13px rgba(255,255,255,.9),inset 0 -7px 14px rgba(54,132,184,.16) }
+    .button:active:not(:disabled) { transform:scale(.97) }
+    .button:disabled { opacity:.55; cursor:not-allowed; filter:saturate(.7) }
+    .button span { display:block; font-size:25px; letter-spacing:.08em }
+    .button small { display:block; margin-top:8px; font-size:12px; font-weight:600; opacity:.7 }
+    .helper { margin:17px 0 0; color:var(--muted); font-size:13px }
+    .details { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:29px }
+    .detail { padding:13px 14px; border-radius:14px; background:#f4f9fd }
+    .detail label { display:block; margin-bottom:5px; color:var(--muted); font-size:11px }
+    .detail code { color:#315a78; font-size:13px; overflow-wrap:anywhere }
+    .log { min-height:19px; margin:18px 0 0; text-align:center; color:#5686a5; font-size:13px }
+    @media(max-width:640px) {
+      body { padding:16px; place-items:start center; }
+      .card { margin:auto 0; border-radius:25px; }
+      .send-row { flex-direction:column; gap:17px; }
+      .message-field { width:100%; }
+      .message-field input { padding:14px 15px; font-size:16px; }
+      .mic-button { width:min(100%,220px); aspect-ratio:1; }
+      .transcript-row { flex-direction:column; gap:10px; }
+      .transcript-field textarea { min-height:88px; font-size:16px; }
+      .send-button { align-self:stretch; min-height:52px; }
+      .helper { margin-top:13px; }
+    }
+    @media(max-width:380px) {
+      body { padding:10px; }
+      .card { padding:23px 17px; border-radius:22px; }
+      .details { grid-template-columns:1fr; gap:8px; margin-top:22px; }
+      .detail { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 13px; }
+      .detail label { margin:0; flex:none; }
+      .detail code { text-align:right; }
+      h1 { font-size:26px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="eyebrow">JJ LAB · MQTT CONTROL</div>
+    <h1>裝置控制面板</h1>
+    <p class="intro">開啟頁面後會自動連線。連線完成即可傳送控制訊息。</p>
+    <section class="status" aria-live="polite">
+      <span id="dot" class="dot"></span>
+      <div><strong id="status">正在連線…</strong><small id="statusDetail">正在連接 EMQX 公開 MQTT Broker</small></div>
+    </section>
+    <div class="control">
+      <div class="send-row">
+        <button id="mic" class="mic-button" type="button" aria-label="開始語音辨識">
+          <svg class="mic-icon" viewBox="0 0 48 48" fill="none" aria-hidden="true"><rect x="18" y="5" width="12" height="25" rx="6" fill="currentColor"/><path d="M11 23a13 13 0 0 0 26 0M24 36v7m-8 0h16" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div id="wave" class="wave" role="status" aria-label="正在偵測聲音"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <p id="messageHint" class="helper">按麥克風開始語音辨識</p>
+      <div class="transcript-row">
+        <div class="transcript-field">
+          <label for="message">辨識文字（可編輯）</label>
+          <textarea id="message" maxlength="512" placeholder="語音辨識結果會顯示在這裡，你也可以直接輸入或修改。" aria-label="可編輯的辨識文字"></textarea>
+        </div>
+        <button id="send" class="send-button" type="button" disabled>傳送文字</button>
+      </div>
+    </div>
+    <div class="details">
+      <div class="detail"><label>Broker</label><code>broker.emqx.io</code></div>
+      <div class="detail"><label>連線方式</label><code>WebSocket · 8083</code></div>
+      <div class="detail"><label>訂閱主題</label><code>jjlab/a</code></div>
+      <div class="detail"><label>語音語言</label><code>繁體中文 · 台灣</code></div>
+    </div>
+    <p id="log" class="log" aria-live="polite"></p>
+  </main>
+  <script>
+    (() => {
+      const topic = 'jjlab/a';
+      const statusEl = document.getElementById('status');
+      const detailEl = document.getElementById('statusDetail');
+      const dot = document.getElementById('dot');
+      const button = document.getElementById('send');
+      const messageInput = document.getElementById('message');
+      const micButton = document.getElementById('mic');
+      const wave = document.getElementById('wave');
+      const messageHint = document.getElementById('messageHint');
+      const log = document.getElementById('log');
+      let subscribed = false;
+      let recognition = null;
+      let listening = false;
+      let stream = null;
+      let microphonePromise = null;
+      let audioContext = null;
+      let animationFrame = 0;
+      let lastLoudAt = 0;
+      let speechStarted = false;
+      let recognitionError = '';
+      const setStatus = (state, title, detail) => {
+        statusEl.textContent = title;
+        detailEl.textContent = detail;
+        dot.className = 'dot' + (state ? ' ' + state : '');
+      };
+
+      const syncSendButton = () => {
+        button.disabled = !client.connected || !subscribed || !messageInput.value.trim();
+      };
+      const releaseMicrophone = () => {
+        cancelAnimationFrame(animationFrame);
+        // Keep the granted microphone stream alive for this page session so
+        // starting recognition again does not request permission repeatedly.
+        if (audioContext && audioContext.state !== 'closed') audioContext.close().catch(() => {});
+        audioContext = null;
+      };
+      const getMicrophoneStream = () => {
+        if (stream && stream.getTracks().some((track) => track.readyState === 'live')) return Promise.resolve(stream);
+        if (!microphonePromise) {
+          microphonePromise = navigator.mediaDevices.getUserMedia({ audio: true })
+            .then((grantedStream) => {
+              stream = grantedStream;
+              stream.getTracks().forEach((track) => track.addEventListener('ended', () => {
+                stream = null;
+                microphonePromise = null;
+              }, { once: true }));
+              return stream;
+            })
+            .catch((error) => {
+              microphonePromise = null;
+              throw error;
+            });
+        }
+        return microphonePromise;
+      };
+      const finishRecognition = () => {
+        listening = false;
+        releaseMicrophone();
+        micButton.classList.remove('listening');
+        micButton.setAttribute('aria-label', '開始語音辨識');
+        wave.classList.remove('active');
+        micButton.disabled = false;
+        if (recognitionError) {
+          messageHint.textContent = recognitionError;
+        } else if (messageInput.value.trim()) {
+          messageHint.textContent = '辨識完成，可編輯文字後按「傳送文字」';
+        } else {
+          messageHint.textContent = '沒有辨識到文字，可以再按麥克風試一次';
+        }
+        syncSendButton();
+      };
+      const stopRecognition = () => {
+        if (listening && recognition) {
+          micButton.disabled = true;
+          messageHint.textContent = '正在整理辨識結果…';
+          try { recognition.stop(); } catch (_) { finishRecognition(); }
+        }
+      };
+      const monitorSilence = () => {
+        if (!listening || !audioContext || !stream) return;
+        const source = audioContext.__jjSource;
+        const analyser = audioContext.__jjAnalyser;
+        if (source && analyser) {
+          const samples = new Uint8Array(analyser.fftSize);
+          analyser.getByteTimeDomainData(samples);
+          let sum = 0;
+          for (const sample of samples) {
+            const value = (sample - 128) / 128;
+            sum += value * value;
+          }
+          const level = Math.sqrt(sum / samples.length);
+          const now = performance.now();
+          if (level > 0.025) {
+            lastLoudAt = now;
+            speechStarted = true;
+          } else if (speechStarted && now - lastLoudAt >= 500) {
+            stopRecognition();
+            return;
+          }
+        }
+        animationFrame = requestAnimationFrame(monitorSilence);
+      };
+      const startRecognition = async () => {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+          messageHint.textContent = '此瀏覽器不支援語音辨識，請改用支援 Web Speech API 的瀏覽器。';
+          return;
+        }
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          messageHint.textContent = '此頁面無法存取麥克風，請使用安全連線（HTTPS 或 localhost）開啟。';
+          return;
+        }
+        micButton.disabled = true;
+        messageHint.textContent = '請允許使用麥克風…';
+        try {
+          stream = await getMicrophoneStream();
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          await audioContext.resume();
+          const source = audioContext.createMediaStreamSource(stream);
+          const analyser = audioContext.createAnalyser();
+          const silentOutput = audioContext.createGain();
+          analyser.fftSize = 1024;
+          silentOutput.gain.value = 0;
+          source.connect(analyser);
+          analyser.connect(silentOutput);
+          silentOutput.connect(audioContext.destination);
+          audioContext.__jjSource = source;
+          audioContext.__jjAnalyser = analyser;
+
+          recognition = new SpeechRecognition();
+          recognition.lang = 'zh-TW';
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          recognitionError = '';
+          speechStarted = false;
+          lastLoudAt = performance.now();
+          messageInput.value = '';
+          syncSendButton();
+          recognition.onresult = (event) => {
+            let transcript = '';
+            for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript;
+            messageInput.value = transcript;
+            syncSendButton();
+          };
+          recognition.onerror = (event) => {
+            const errors = {
+              'not-allowed': '麥克風權限遭拒，請在瀏覽器設定中允許麥克風。',
+              'service-not-allowed': '瀏覽器語音辨識服務目前無法使用。',
+              'audio-capture': '找不到可用的麥克風。',
+              'network': '語音辨識服務需要網路，請檢查連線後重試。'
+            };
+            if (event.error !== 'no-speech' && event.error !== 'aborted') recognitionError = errors[event.error] || '語音辨識發生問題：' + event.error;
+          };
+          recognition.onend = finishRecognition;
+          recognition.start();
+          listening = true;
+          micButton.disabled = false;
+          micButton.classList.add('listening');
+          micButton.setAttribute('aria-label', '停止語音辨識');
+          wave.classList.add('active');
+          messageHint.textContent = '正在聆聽…說完並靜音 0.5 秒後會自動結束';
+          animationFrame = requestAnimationFrame(monitorSilence);
+        } catch (err) {
+          recognitionError = err.name === 'NotAllowedError' ? '麥克風權限遭拒，請在瀏覽器設定中允許麥克風。' : '無法啟動麥克風：' + (err.message || '請確認裝置與權限');
+          releaseMicrophone();
+          micButton.disabled = false;
+          messageHint.textContent = recognitionError;
+        }
+      };
+
+      if (!window.mqtt) {
+        setStatus('error', 'MQTT 程式載入失敗', '請確認網路連線後重新整理頁面');
+        return;
+      }
+
+      const clientId = 'jjlab_web_' + Math.random().toString(16).slice(2, 10);
+      setStatus('', '正在連線…', 'broker.emqx.io · MQTT over WebSocket');
+      const client = mqtt.connect('ws://broker.emqx.io:8083/mqtt', {
+        clientId, clean: true, connectTimeout: 10000, reconnectPeriod: 3000,
+        keepalive: 30
+      });
+
+      client.on('connect', () => {
+        setStatus('', '已連線，正在訂閱…', '等待主題訂閱確認');
+        client.subscribe(topic, { qos: 0 }, (err) => {
+          if (err) {
+            subscribed = false; button.disabled = true;
+            setStatus('error', '訂閱失敗', err.message || '無法訂閱 jjlab/a');
+            return;
+          }
+            subscribed = true; syncSendButton();
+          setStatus('online', '已連線', '已成功訂閱 jjlab/a，可以傳送指令');
+        });
+      });
+      client.on('reconnect', () => {
+        subscribed = false; syncSendButton();
+        setStatus('', '連線中斷，正在重新連線…', '系統會自動重試');
+      });
+      client.on('offline', () => {
+        subscribed = false; syncSendButton();
+        setStatus('', '目前離線', '等待網路恢復並自動重新連線');
+      });
+      client.on('close', () => {
+        subscribed = false; syncSendButton();
+        if (!client.reconnecting) setStatus('', '連線已關閉', '正在等待重新連線');
+      });
+      client.on('error', (err) => {
+        setStatus('error', '連線發生問題', err.message || '請稍後再試');
+      });
+
+      micButton.addEventListener('click', () => {
+        if (listening) stopRecognition();
+        else startRecognition();
+      });
+      messageInput.addEventListener('input', syncSendButton);
+      button.addEventListener('click', () => {
+        if (!client.connected || !subscribed) return;
+        const message = messageInput.value;
+        if (!message.trim()) return;
+        button.disabled = true;
+        client.publish(topic, message, { qos: 0, retain: false }, (err) => {
+          if (err) log.textContent = '傳送失敗：' + (err.message || '請重試');
+          else log.textContent = '已送出「' + message + '」· ' + new Date().toLocaleTimeString('zh-TW');
+          syncSendButton();
+        });
+      });
+      window.addEventListener('pagehide', () => {
+        if (stream) stream.getTracks().forEach((track) => track.stop());
+        stream = null;
+        microphonePromise = null;
+        releaseMicrophone();
+      }, { once: true });
+    })();
+  </script>
+</body>
+</html>
